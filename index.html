@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Dream Home | 3D Walkthrough</title>
+<meta name="description" content="Browser 3D walkthrough of my dream house">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8F%A1%3C/text%3E%3C/svg%3E">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+} }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="loader">
+  <div class="card">
+    <h1>Dream Home</h1>
+    <p id="load-text">Loading the house...</p>
+    <div class="bar"><div id="load-bar"></div></div>
+    <p id="load-sub" class="muted"></p>
+  </div>
+</div>
+
+<button id="menu-btn" aria-label="Rooms">&#9776;</button>
+<aside id="sidebar">
+  <header>
+    <h2>Dream Home</h2>
+    <p class="muted">Pick a spot to fly there</p>
+  </header>
+  <div id="rooms"></div>
+  <section class="settings">
+    <h3>Controls</h3>
+    <div class="modes">
+      <button data-mode="orbit" class="mode active">Orbit</button>
+      <button data-mode="walk" class="mode">Walk</button>
+      <button data-mode="fly" class="mode">Fly</button>
+    </div>
+    <label>Move speed <span id="speed-val">1.0x</span>
+      <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"></label>
+    <label class="check"><input id="shadows" type="checkbox" checked> Sun shadows</label>
+    <label class="check"><input id="trees" type="checkbox" checked> Forest</label>
+    <label class="check"><input id="hq" type="checkbox"> High resolution</label>
+  </section>
+</aside>
+
+<div id="hud">
+  <span id="hud-room">Front of house</span>
+  <span id="hud-mode" class="muted">Orbit: drag to rotate, scroll to zoom, right drag to pan</span>
+</div>
+
+<div id="lock-hint" class="hidden">Click to look around. WASD to move, Shift to sprint, Esc to release.</div>
+
+<div id="joy" class="hidden"><div id="joy-knob"></div></div>
+<div id="flybtns" class="hidden"><button id="up-btn">Up</button><button id="down-btn">Down</button></div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

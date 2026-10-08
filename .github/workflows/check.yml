@@ -1,0 +1,20 @@
+name: Check
+
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check main.js
+        run: node --check main.js
+      - name: Validate JSON and model size
+        run: |
+          node -e "const v=require('./assets/viewpoints.json'); if(!v.viewpoints.length) process.exit(1); require('./assets/forest.json'); console.log(v.viewpoints.length,'viewpoints')"
+          size=$(stat -c%s assets/dream_house.glb); echo "glb $size bytes"; test "$size" -lt 100000000
+          head -c 4 assets/dream_house.glb | grep -q glTF
