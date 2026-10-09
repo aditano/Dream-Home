@@ -1,0 +1,43 @@
+{
+  "high": {
+    "files": [
+      {
+        "label": "high-shell",
+        "file": "dream_house_high_shell.glb",
+        "tris": 615328,
+        "bytes": 8900432,
+        "gpuBytes": 89489398,
+        "textures": 30,
+        "prims": 17
+      },
+      {
+        "label": "high-props",
+        "file": "dream_house_high_props.glb",
+        "tris": 378343,
+        "bytes": 4558592,
+        "gpuBytes": 117904703,
+        "textures": 70,
+        "prims": 115
+      }
+    ],
+    "triangles": 993671,
+    "fileBytes": 13459024,
+    "textureBytes": 207394101,
+    "textures": 100,
+    "primitives": 132
+  },
+  "balanced": {
+    "label": "balanced",
+    "file": "dream_house_balanced.glb",
+    "tris": 993671,
+    "bytes": 9389252,
+    "gpuBytes": 45299005,
+    "textures": 77,
+    "prims": 132
+  },
+  "notes": {
+    "low": "assets/dream_house_mobile.glb is the existing low tier and is not rebuilt here.",
+    "ao": "Vertex colors on the non-instanced shell and furniture store a coarse corner darkening.",
+    "textures": "Big surfaces stay at the source 1024. Props step down. High keeps a few 512 normal and roughness maps."
+  }
+}

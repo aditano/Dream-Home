@@ -68,16 +68,21 @@
     <label>Quality
       <select id="quality">
         <option value="auto">Auto</option>
+        <option value="low">Low</option>
+        <option value="balanced">Balanced</option>
+        <option value="high">High</option>
         <option value="desktop">Desktop</option>
-        <option value="mobile">Mobile</option>
       </select>
     </label>
     <p id="tier-note" class="muted"></p>
+    <p id="quality-warn" class="warn hidden"></p>
     <label class="check"><input id="shadows" type="checkbox"> Sun shadows</label>
     <label class="check"><input id="trees" type="checkbox" checked> Forest</label>
     <label class="check"><input id="hq" type="checkbox"> Sharper image</label>
   </section>
 </aside>
+
+<div id="stream-note" class="hidden">Adding rooms and furniture...</div>
 
 <div id="hud">
   <span id="hud-room">Front of house</span>

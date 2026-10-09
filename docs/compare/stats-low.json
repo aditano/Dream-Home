@@ -1,0 +1,33 @@
+{
+  "tier": "low",
+  "choice": "low",
+  "reasons": [],
+  "modelUrl": "assets/dream_house_mobile.glb",
+  "modelUrls": [
+    "assets/dream_house_mobile.glb"
+  ],
+  "fellBack": false,
+  "fallbackNote": "",
+  "triangles": 444995,
+  "meshes": 136,
+  "textureCount": 77,
+  "textureBytes": 54200979,
+  "dpr": 1,
+  "shadows": false,
+  "shadowSize": 512,
+  "antialias": false,
+  "samples": 0,
+  "env": false,
+  "forestRatio": 0.06,
+  "forestTrees": 660,
+  "info": {
+    "calls": 153,
+    "triangles": 470218,
+    "geometries": 136,
+    "textures": 77
+  },
+  "heap": {
+    "usedJSHeapSize": 86400000,
+    "totalJSHeapSize": 91700000
+  }
+}

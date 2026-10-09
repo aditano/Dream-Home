@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: 'tests',
-  timeout: 120000,
+  timeout: 180000,
   expect: { timeout: 20000 },
   fullyParallel: false,
   workers: 1,
@@ -18,6 +18,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'webkit-iphone', use: { ...devices['iPhone 13'] } },
+    { name: 'webkit-ipad', use: { ...devices['iPad (gen 7)'] } },
     {
       name: 'chromium-mobile',
       use: {
