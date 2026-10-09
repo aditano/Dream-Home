@@ -29,6 +29,8 @@ Auto quality on a phone, tablet, touch screen, narrow window, or `navigator.devi
 | High | `dream_house_high_shell.glb` then `dream_house_high_props.glb` (about 13.5 MB together) | House shell kept, far and small things simplified. Big surfaces stay at 1024. A few brick, roof, and floor normals stay at 512. About 0.99 million model triangles and about 207 MB of GPU textures with mipmaps. 1024 shadow around the camera, sky lighting, antialiasing, about 34 percent of the forest. |
 | Desktop | `dream_house.glb` (about 38 MB) | Full model, 4096 shadows, full forest. |
 
+Playwright on an iPhone 13 viewport measured High at about 1.19 million triangles drawn, 148 draw calls, and 208 MB of textures, with a 1024 shadow map and 4x MSAA. Balanced was about 1.12 million triangles and 53 MB of textures. Low stayed near 0.44 million triangles and 52 MB. Desktop, including the full forest, was about 5.3 million triangles, 153 draw calls, and 1.21 GB of textures.
+
 The house shell paints first on High. Rooms and furniture stream in after that, then the forest. After each part uploads, the page drops the CPU copy of the images (`texture.source.data = null`, and `ImageBitmap.close()` when the browser decoded one) so the decode does not sit next to the GPU copy.
 
 If the graphics context is lost, or the page reloads before the first frames finish (a `sessionStorage` boot flag), Auto steps down one tier and says so in the sidebar. A sustained frame time under 20 fps on Auto does the same. The lightest tier shows stills instead of looping.

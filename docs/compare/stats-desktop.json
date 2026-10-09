@@ -1,0 +1,33 @@
+{
+  "tier": "desktop",
+  "choice": "desktop",
+  "reasons": [],
+  "modelUrl": "assets/dream_house.glb",
+  "modelUrls": [
+    "assets/dream_house.glb"
+  ],
+  "fellBack": false,
+  "fallbackNote": "",
+  "triangles": 5299653,
+  "meshes": 136,
+  "textureCount": 229,
+  "textureBytes": 1299727633,
+  "dpr": 1,
+  "shadows": true,
+  "shadowSize": 4096,
+  "antialias": true,
+  "samples": 4,
+  "env": true,
+  "forestRatio": 1,
+  "forestTrees": 11000,
+  "info": {
+    "calls": 153,
+    "triangles": 5613403,
+    "geometries": 136,
+    "textures": 225
+  },
+  "heap": {
+    "usedJSHeapSize": 86400000,
+    "totalJSHeapSize": 91700000
+  }
+}

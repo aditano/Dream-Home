@@ -19,6 +19,20 @@ const COLUMNS = [
   ['low', 'Low, previous phone model'],
 ];
 
+function writeFileRetry(file, data) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.writeFileSync(file, data);
+      return;
+    } catch (err) {
+      lastErr = err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
 function decodeShot(dataUrl) {
   const body = dataUrl.split(',')[1];
   return Buffer.from(body, 'base64');
@@ -94,7 +108,7 @@ test('side by side views of desktop, high, and low', async ({ page }, testInfo) 
     }
     const row = await sideBySide(panels);
     const name = `compare-${id}.jpg`;
-    fs.writeFileSync(path.join(ARTIFACTS, name), row);
-    fs.writeFileSync(path.join(DOCS, name), row);
+    writeFileRetry(path.join(DOCS, name), row);
+    writeFileRetry(path.join(ARTIFACTS, name), row);
   }
 });

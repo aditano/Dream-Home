@@ -1,0 +1,34 @@
+{
+  "tier": "high",
+  "choice": "high",
+  "reasons": [],
+  "modelUrl": "assets/dream_house_high_shell.glb",
+  "modelUrls": [
+    "assets/dream_house_high_shell.glb",
+    "assets/dream_house_high_props.glb"
+  ],
+  "fellBack": false,
+  "fallbackNote": "",
+  "triangles": 1191395,
+  "meshes": 136,
+  "textureCount": 101,
+  "textureBytes": 217874401,
+  "dpr": 1,
+  "shadows": true,
+  "shadowSize": 1024,
+  "antialias": true,
+  "samples": 4,
+  "env": true,
+  "forestRatio": 0.34,
+  "forestTrees": 3740,
+  "info": {
+    "calls": 153,
+    "triangles": 1249278,
+    "geometries": 136,
+    "textures": 102
+  },
+  "heap": {
+    "usedJSHeapSize": 86400000,
+    "totalJSHeapSize": 91700000
+  }
+}
