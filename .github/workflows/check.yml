@@ -20,3 +20,13 @@ jobs:
           head -c 4 assets/dream_house.glb | grep -q glTF
           msize=$(stat -c%s assets/dream_house_mobile.glb); echo "mobile glb $msize bytes"; test "$msize" -lt 12582912
           head -c 4 assets/dream_house_mobile.glb | grep -q glTF
+          ssize=$(stat -c%s assets/dream_house_high_shell.glb); echo "high shell $ssize bytes"
+          psize=$(stat -c%s assets/dream_house_high_props.glb); echo "high props $psize bytes"
+          test "$((ssize + psize))" -lt 26214400
+          test "$ssize" -lt 100000000
+          test "$psize" -lt 100000000
+          head -c 4 assets/dream_house_high_shell.glb | grep -q glTF
+          head -c 4 assets/dream_house_high_props.glb | grep -q glTF
+          bsize=$(stat -c%s assets/dream_house_balanced.glb); echo "balanced glb $bsize bytes"; test "$bsize" -lt 20971520
+          head -c 4 assets/dream_house_balanced.glb | grep -q glTF
+          node -e "const r=require('./assets/tier-report.json'); if(!r.high||!r.balanced) process.exit(1); console.log('tier report', r.high.triangles, r.high.fileBytes, r.high.textureBytes)"

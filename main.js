@@ -13,6 +13,119 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 const VIEWS_URL = 'assets/viewpoints.json';
 const FOREST_URL = 'assets/forest.json';
 const $ = (id) => document.getElementById(id);
+const LADDER = ['low', 'balanced', 'high', 'desktop'];
+const TIER_LABEL = { low: 'Low', balanced: 'Balanced', high: 'High', desktop: 'Desktop' };
+
+const TIERS = {
+  low: {
+    id: 'low',
+    files: ['assets/dream_house_mobile.glb'],
+    expected: 8e6,
+    antialias: false,
+    shadows: false,
+    shadowSize: 512,
+    tightShadow: false,
+    shadowRadius: 30,
+    env: false,
+    envIntensity: 0,
+    forest: 0.06,
+    tree: 'low',
+    dpr: 1.25,
+    dprSharp: 1.5,
+    near: 0.08,
+    far: 2500,
+    fogNear: 160,
+    fogFar: 800,
+    aniso: 1,
+    metalClamp: true,
+    exposure: 1.08,
+    hemi: 1.5,
+    sun: 2.2,
+    ambient: 0.55,
+    power: 'default',
+  },
+  balanced: {
+    id: 'balanced',
+    files: ['assets/dream_house_balanced.glb'],
+    expected: 16e6,
+    antialias: true,
+    shadows: true,
+    shadowSize: 1024,
+    tightShadow: true,
+    shadowRadius: 16,
+    env: true,
+    envIntensity: 0.7,
+    forest: 0.22,
+    tree: 'mid',
+    dpr: 1.25,
+    dprSharp: 1.5,
+    near: 0.08,
+    far: 2800,
+    fogNear: 200,
+    fogFar: 1100,
+    aniso: 2,
+    metalClamp: false,
+    exposure: 1.12,
+    hemi: 0.95,
+    sun: 2.5,
+    ambient: 0.28,
+    power: 'default',
+  },
+  high: {
+    id: 'high',
+    files: ['assets/dream_house_high_shell.glb', 'assets/dream_house_high_props.glb'],
+    expected: 20e6,
+    antialias: true,
+    shadows: true,
+    shadowSize: 1024,
+    tightShadow: true,
+    shadowRadius: 18,
+    env: true,
+    envIntensity: 0.8,
+    forest: 0.34,
+    tree: 'mid',
+    dpr: 1.5,
+    dprSharp: 1.5,
+    near: 0.06,
+    far: 3000,
+    fogNear: 220,
+    fogFar: 1300,
+    aniso: 4,
+    metalClamp: false,
+    exposure: 1.12,
+    hemi: 0.9,
+    sun: 2.55,
+    ambient: 0.22,
+    power: 'default',
+  },
+  desktop: {
+    id: 'desktop',
+    files: ['assets/dream_house.glb'],
+    expected: 40e6,
+    antialias: true,
+    shadows: true,
+    shadowSize: 4096,
+    tightShadow: false,
+    shadowRadius: 70,
+    env: true,
+    envIntensity: 0.6,
+    forest: 1,
+    tree: 'high',
+    dpr: 1.25,
+    dprSharp: 2,
+    near: 0.05,
+    far: 4000,
+    fogNear: 250,
+    fogFar: 1600,
+    aniso: 4,
+    metalClamp: false,
+    exposure: 1.1,
+    hemi: 1.1,
+    sun: 2.6,
+    ambient: 0.3,
+    power: 'high-performance',
+  },
+};
 
 function isIOSDevice() {
   const ua = navigator.userAgent || '';
@@ -39,27 +152,91 @@ function storageSet(key, value) {
     else localStorage.setItem(key, value);
   } catch (err) { /* private mode has no storage */ }
 }
-
-function resolveTier() {
-  const param = new URLSearchParams(location.search).get('quality');
-  const saved = storageGet('dreamhome-quality');
-  let choice = 'auto';
-  if (param === 'mobile' || param === 'desktop' || param === 'auto') choice = param;
-  else if (saved === 'mobile' || saved === 'desktop') choice = saved;
-  const reasons = tierReasons();
-  const mobile = choice === 'mobile' || (choice === 'auto' && reasons.length > 0);
-  return { choice, mobile, reasons };
+function sessionGet(key) {
+  try { return sessionStorage.getItem(key); } catch (err) { return null; }
+}
+function sessionSet(key, value) {
+  try {
+    if (value == null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch (err) { /* private mode has no storage */ }
 }
 
-const tier = resolveTier();
-const mobile = tier.mobile;
-const MODEL_URL = mobile ? 'assets/dream_house_mobile.glb' : 'assets/dream_house.glb';
-const EXPECTED_BYTES = mobile ? 8e6 : 40e6;
+function normalizeChoice(value) {
+  if (value === 'mobile') return 'low';
+  if (value === 'auto' || LADDER.includes(value)) return value;
+  return null;
+}
+
+function stepDown(id) {
+  const index = LADDER.indexOf(id);
+  if (index <= 0) return 'low';
+  return LADDER[index - 1];
+}
+
+function lowerOf(a, b) {
+  const ia = LADDER.indexOf(a);
+  const ib = LADDER.indexOf(b);
+  if (ia < 0) return b;
+  if (ib < 0) return a;
+  return ia <= ib ? a : b;
+}
+
+function resolveSelection() {
+  const param = new URLSearchParams(location.search).get('quality');
+  const fromParam = normalizeChoice(param);
+  const saved = normalizeChoice(storageGet('dreamhome-quality'));
+  const reasons = tierReasons();
+  const phoneLike = reasons.length > 0;
+  const preferred = phoneLike ? 'high' : 'desktop';
+  const choice = fromParam || saved || 'auto';
+  const forcedByUrl = !!fromParam;
+  let requested = choice === 'auto' ? preferred : choice;
+  let fellBack = false;
+  let note = '';
+
+  if (!forcedByUrl) {
+    const boot = sessionGet('dreamhome-boot');
+    if (boot && LADDER.includes(boot)) {
+      const next = stepDown(boot);
+      sessionSet('dreamhome-ceiling', next);
+      note = `The last visit stopped during ${TIER_LABEL[boot]}, so this visit is using ${TIER_LABEL[next]}.`;
+      sessionSet('dreamhome-fallback-note', note);
+      sessionSet('dreamhome-boot', null);
+      fellBack = true;
+    }
+    const ceiling = sessionGet('dreamhome-ceiling');
+    if (ceiling && LADDER.includes(ceiling)) {
+      const capped = lowerOf(requested, ceiling);
+      if (capped !== requested) {
+        fellBack = true;
+        if (!note) {
+          note = sessionGet('dreamhome-fallback-note')
+            || `This visit is using ${TIER_LABEL[capped]} after the graphics process restarted.`;
+        }
+      }
+      requested = capped;
+    }
+  }
+
+  if (!TIERS[requested]) requested = 'low';
+  sessionSet('dreamhome-boot', requested);
+  return { choice, tierId: requested, reasons, phoneLike, fellBack, note, forcedByUrl };
+}
+
+function reloadWithoutQuality() {
+  const url = new URL(location.href);
+  url.searchParams.delete('quality');
+  location.assign(url.pathname + url.search + url.hash);
+}
+
+const selection = resolveSelection();
+const cfg = TIERS[selection.tierId];
 const ios = isIOSDevice();
 const coarse = matchMedia('(pointer: coarse)').matches;
-const touchLook = ios || coarse || mobile || (navigator.maxTouchPoints > 0 && matchMedia('(hover: none)').matches);
+const touchLook = ios || coarse || (navigator.maxTouchPoints > 0 && matchMedia('(hover: none)').matches);
 // Pointer lock is not implemented on iOS Safari. Walk and fly use drag-to-look there.
-const pointerLockOK = !ios && !coarse && !mobile && typeof Element.prototype.requestPointerLock === 'function';
+const pointerLockOK = !touchLook && typeof Element.prototype.requestPointerLock === 'function';
 
 const canvas = $('c');
 const MODE_HELP = {
@@ -83,10 +260,10 @@ function createRenderer() {
   try {
     const created = new THREE.WebGLRenderer({
       canvas,
-      antialias: !mobile,
+      antialias: cfg.antialias,
       alpha: false,
       stencil: false,
-      powerPreference: mobile ? 'default' : 'high-performance',
+      powerPreference: cfg.power,
       failIfMajorPerformanceCaveat: false,
     });
     if (!created.getContext()) return null;
@@ -97,14 +274,14 @@ function createRenderer() {
   }
 }
 
-const renderer = createRenderer();
-if (!renderer) {
-  showGfxFallback('WebGL did not start on this device. Try a desktop computer for the full walkthrough.');
-  window.dreamHome = {
-    tier: mobile ? 'mobile' : 'desktop',
-    choice: tier.choice,
-    reasons: tier.reasons,
-    modelUrl: MODEL_URL,
+function failedApi() {
+  return {
+    tier: cfg.id,
+    choice: selection.choice,
+    reasons: selection.reasons,
+    modelUrl: cfg.files[0],
+    modelUrls: cfg.files.slice(),
+    fellBack: selection.fellBack,
     failed: true,
     views: () => [],
     jump() { return false; },
@@ -112,26 +289,41 @@ if (!renderer) {
     ready: () => false,
     stats: () => null,
   };
+}
+
+const renderer = createRenderer();
+if (!renderer) {
+  showGfxFallback('WebGL did not start on this device. Try a desktop computer for the full walkthrough.');
+  window.dreamHome = failedApi();
 } else {
   start(renderer);
 }
 
 function pixelRatioCap(sharp) {
   const dpr = window.devicePixelRatio || 1;
-  if (mobile) return Math.min(dpr, sharp ? 1.5 : 1.25);
-  return Math.min(dpr, sharp ? 2 : 1.25);
+  return Math.min(dpr, sharp ? cfg.dprSharp : cfg.dpr);
+}
+
+function tierNote() {
+  if (selection.note) return selection.note;
+  if (cfg.id === 'low') return 'Low keeps the lightest model for a tight memory budget.';
+  if (cfg.id === 'balanced') return 'Balanced uses smaller textures, with shadows and sky lighting.';
+  if (cfg.id === 'high') return 'High keeps the house detail and large-surface textures for this device.';
+  if (selection.phoneLike) return 'Desktop is the full model. This phone may run out of memory.';
+  return 'Desktop is the full detail model.';
 }
 
 function start(renderer) {
+  document.body.dataset.tier = cfg.id;
   renderer.setPixelRatio(pixelRatioCap(false));
   renderer.toneMapping = renderer.capabilities.isWebGL2 ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
-  renderer.shadowMap.enabled = !mobile;
+  renderer.toneMappingExposure = cfg.exposure;
+  renderer.shadowMap.enabled = cfg.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, mobile ? 0.08 : 0.05, mobile ? 2500 : 4000);
+  const camera = new THREE.PerspectiveCamera(50, 1, cfg.near, cfg.far);
   camera.position.set(15, 6, 54);
 
   const sky = new Sky();
@@ -144,9 +336,9 @@ function start(renderer) {
   sky.material.uniforms.sunPosition.value.copy(sunDir);
   scene.add(sky);
 
-  // The procedural sky is the environment. PMREM keeps a float cubemap, which
-  // is a common iOS memory spike, so phones use the hemisphere light only.
-  if (!mobile) {
+  // A 256 PMREM from the same sky. The output cubemap stays small, which is
+  // the safe size on iOS. Low skips it and relies on the hemisphere light.
+  if (cfg.env) {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envScene = new THREE.Scene();
     const envSky = new Sky();
@@ -157,12 +349,12 @@ function start(renderer) {
     envSky.material.uniforms.sunPosition.value.copy(sunDir);
     envScene.add(envSky);
     const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(40, 24).rotateX(-Math.PI / 2).translate(0, -2, 0),
+      new THREE.CircleGeometry(40, 16).rotateX(-Math.PI / 2).translate(0, -2, 0),
       new THREE.MeshBasicMaterial({ color: 0x4d5a3a }),
     );
     envScene.add(ground);
     scene.environment = pmrem.fromScene(envScene, 0.02, 0.1, 100).texture;
-    scene.environmentIntensity = 0.6;
+    scene.environmentIntensity = cfg.envIntensity;
     pmrem.dispose();
     envSky.geometry.dispose();
     envSky.material.dispose();
@@ -170,29 +362,65 @@ function start(renderer) {
     ground.material.dispose();
   }
 
-  scene.fog = new THREE.Fog(0xc9d3dc, mobile ? 180 : 250, mobile ? 900 : 1600);
-  scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x5b5040, mobile ? 1.5 : 1.1));
-  const sun = new THREE.DirectionalLight(0xfff1dc, mobile ? 2.2 : 2.6);
+  scene.fog = new THREE.Fog(0xc9d3dc, cfg.fogNear, cfg.fogFar);
+  scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x5b5040, cfg.hemi));
+  const sun = new THREE.DirectionalLight(0xfff1dc, cfg.sun);
   sun.position.copy(sunDir).multiplyScalar(120).add(new THREE.Vector3(15, 0, 0));
   sun.target.position.set(15, 0, 0);
-  const shadowSize = mobile ? 512 : 4096;
-  sun.castShadow = !mobile;
-  sun.shadow.mapSize.set(shadowSize, shadowSize);
-  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = mobile ? 0.08 : 0.03;
+  sun.castShadow = cfg.shadows;
+  sun.shadow.mapSize.set(cfg.shadowSize, cfg.shadowSize);
+  Object.assign(sun.shadow.camera, {
+    left: -cfg.shadowRadius,
+    right: cfg.shadowRadius,
+    top: cfg.shadowRadius,
+    bottom: -cfg.shadowRadius,
+    near: 1,
+    far: cfg.tightShadow ? 200 : 400,
+  });
+  sun.shadow.bias = cfg.tightShadow ? -0.00025 : -0.0004;
+  sun.shadow.normalBias = cfg.tightShadow ? 0.04 : 0.03;
   scene.add(sun, sun.target);
-  scene.add(new THREE.AmbientLight(0xfff4e6, mobile ? 0.55 : 0.3));
+  scene.add(new THREE.AmbientLight(0xfff4e6, cfg.ambient));
 
+  const shadowAnchor = new THREE.Vector3(1e9, 0, 1e9);
+  function placeShadow(force) {
+    if (!cfg.tightShadow || !sun.castShadow) return;
+    const dx = camera.position.x - shadowAnchor.x;
+    const dz = camera.position.z - shadowAnchor.z;
+    if (!force && dx * dx + dz * dz < 0.64) return;
+    shadowAnchor.set(camera.position.x, 0, camera.position.z);
+    sun.target.position.set(shadowAnchor.x, 0, shadowAnchor.z);
+    sun.position.copy(sunDir).multiplyScalar(90).add(sun.target.position);
+    const r = cfg.shadowRadius;
+    const cam = sun.shadow.camera;
+    cam.left = -r;
+    cam.right = r;
+    cam.top = r;
+    cam.bottom = -r;
+    cam.near = 1;
+    cam.far = 200;
+    cam.updateProjectionMatrix();
+    sun.updateMatrixWorld();
+    sun.target.updateMatrixWorld();
+  }
+
+  const modelRoots = [];
   function applyShadows(on) {
-    const size = mobile ? 512 : 4096;
-    sun.shadow.mapSize.set(size, size);
+    sun.shadow.mapSize.set(cfg.shadowSize, cfg.shadowSize);
     if (sun.shadow.map) {
       sun.shadow.map.dispose();
       sun.shadow.map = null;
     }
     sun.castShadow = on;
     renderer.shadowMap.enabled = on;
+    for (const root of modelRoots) {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = on && !!o.userData.canShadow;
+        o.receiveShadow = on && !!o.userData.canReceive;
+      });
+    }
+    if (on) placeShadow(true);
   }
 
   const orbit = new OrbitControls(camera, canvas);
@@ -221,10 +449,15 @@ function start(renderer) {
   const sidebar = $('sidebar');
   const menuBtn = $('menu-btn');
 
-  if (mobile) loadText.textContent = 'Loading the lighter house...';
-  $('quality').value = tier.choice;
-  $('tier-note').textContent = mobile ? 'Lighter model for this device.' : 'Full detail model.';
-  $('shadows').checked = !mobile;
+  loadText.textContent = cfg.files.length > 1 ? 'Loading the house...' : 'Loading the house...';
+  $('quality').value = selection.choice === 'mobile' ? 'low' : selection.choice;
+  $('tier-note').textContent = tierNote();
+  $('shadows').checked = cfg.shadows;
+  const warn = $('quality-warn');
+  if (warn && cfg.id === 'desktop' && selection.phoneLike) {
+    warn.textContent = 'Desktop uses the full model. On a phone or tablet, Safari can run out of memory and this page will drop to a lighter tier.';
+    warn.classList.remove('hidden');
+  }
 
   function setMenu(open) {
     sidebar.classList.toggle('open', open);
@@ -268,10 +501,18 @@ function start(renderer) {
   });
   $('quality').addEventListener('change', () => {
     const value = $('quality').value;
+    if (value === 'desktop' && selection.phoneLike) {
+      const ok = window.confirm('Desktop loads the full model and can crash iPhone or iPad Safari. The page will drop to a lighter tier if that happens. Continue?');
+      if (!ok) {
+        $('quality').value = selection.choice;
+        return;
+      }
+    }
     storageSet('dreamhome-quality', value === 'auto' ? null : value);
-    const url = new URL(location.href);
-    url.searchParams.delete('quality');
-    location.assign(url.pathname + url.search + url.hash);
+    sessionSet('dreamhome-ceiling', null);
+    sessionSet('dreamhome-boot', null);
+    sessionSet('dreamhome-fallback-note', null);
+    reloadWithoutQuality();
   });
   menuBtn.addEventListener('click', () => setMenu(!sidebar.classList.contains('open')));
   $('scrim').addEventListener('click', () => setMenu(false));
@@ -461,18 +702,61 @@ function start(renderer) {
   }
 
   function thinForest(list) {
-    if (!mobile) return list;
-    const target = Math.min(650, Math.max(80, Math.round(list.length * 0.06)));
+    if (cfg.forest >= 1) return list;
+    const target = Math.min(list.length, Math.max(80, Math.round(list.length * cfg.forest)));
     const step = list.length / target;
     const out = [];
     for (let i = 0; i < target; i++) out.push(list[Math.floor(i * step)]);
     return out;
   }
 
+  function treeParts(level) {
+    if (level === 'low') {
+      return {
+        fir: [
+          new THREE.ConeGeometry(3.2, 8, 5).translate(0, 7, 0),
+          new THREE.ConeGeometry(2.5, 7, 5).translate(0, 11.5, 0),
+        ],
+        broad: [new THREE.IcosahedronGeometry(3.4, 0).translate(0, 9, 0)],
+        trunk: new THREE.CylinderGeometry(0.25, 0.4, 5, 4).translate(0, 2.5, 0),
+      };
+    }
+    if (level === 'mid') {
+      return {
+        fir: [
+          new THREE.ConeGeometry(3.2, 8, 6).translate(0, 7, 0),
+          new THREE.ConeGeometry(2.4, 7, 6).translate(0, 12, 0),
+        ],
+        broad: [
+          new THREE.IcosahedronGeometry(3.3, 0).translate(0, 8.2, 0),
+          new THREE.IcosahedronGeometry(2.4, 0).translate(1.4, 9.6, 0.4),
+        ],
+        trunk: new THREE.CylinderGeometry(0.28, 0.45, 5.2, 5).translate(0, 2.6, 0),
+      };
+    }
+    return {
+      fir: [
+        new THREE.ConeGeometry(3.2, 8, 8).translate(0, 7, 0),
+        new THREE.ConeGeometry(2.5, 7, 8).translate(0, 11.5, 0),
+        new THREE.ConeGeometry(1.6, 6, 8).translate(0, 16, 0),
+      ],
+      broad: [
+        new THREE.IcosahedronGeometry(3.2, 1).translate(0, 8, 0),
+        new THREE.IcosahedronGeometry(2.4, 1).translate(1.8, 9.5, 0.6),
+        new THREE.IcosahedronGeometry(2.2, 1).translate(-1.6, 9.8, -0.8),
+        new THREE.IcosahedronGeometry(2.0, 1).translate(0.2, 11.2, 0.4),
+      ],
+      trunk: new THREE.CylinderGeometry(0.25, 0.4, 5, 5).translate(0, 2.5, 0),
+    };
+  }
+
+  let forestCount = 0;
+  let forestDone = false;
   async function buildForest() {
     try {
       const raw = await (await fetch(FOREST_URL)).json();
       const data = thinForest(raw);
+      forestCount = data.length;
       const firs = data.filter((t) => t[4] === 'fir');
       const broad = data.filter((t) => t[4] !== 'fir');
       const group = new THREE.Group();
@@ -499,34 +783,24 @@ function start(renderer) {
         m.receiveShadow = false;
         group.add(m);
       };
-      const firSeg = mobile ? 5 : 8;
-      const firParts = [
-        new THREE.ConeGeometry(3.2, 8, firSeg).translate(0, 7, 0),
-        new THREE.ConeGeometry(2.5, 7, firSeg).translate(0, 11.5, 0),
-      ];
-      if (!mobile) firParts.push(new THREE.ConeGeometry(1.6, 6, firSeg).translate(0, 16, 0));
-      const firGeo = mergeGeometries(firParts);
-      firParts.forEach((g) => g.dispose());
-      const broadParts = mobile
-        ? [new THREE.IcosahedronGeometry(3.4, 0).translate(0, 9, 0)]
-        : [
-          new THREE.IcosahedronGeometry(3.2, 1).translate(0, 8, 0),
-          new THREE.IcosahedronGeometry(2.4, 1).translate(1.8, 9.5, 0.6),
-          new THREE.IcosahedronGeometry(2.2, 1).translate(-1.6, 9.8, -0.8),
-          new THREE.IcosahedronGeometry(2.0, 1).translate(0.2, 11.2, 0.4),
-        ];
-      const broadGeo = mergeGeometries(broadParts);
-      broadParts.forEach((g) => g.dispose());
-      const trunk = new THREE.CylinderGeometry(0.25, 0.4, 5, mobile ? 4 : 5).translate(0, 2.5, 0);
+      const parts = treeParts(cfg.tree);
+      const firGeo = mergeGeometries(parts.fir);
+      const broadGeo = mergeGeometries(parts.broad);
+      parts.fir.forEach((g) => g.dispose());
+      parts.broad.forEach((g) => g.dispose());
       make(firs, firGeo, firMat);
       make(broad, broadGeo, broadMat);
-      make(data, trunk, trunkMat);
+      make(data, parts.trunk, trunkMat);
       scene.add(group);
       $('trees').addEventListener('change', (e) => { group.visible = e.target.checked; });
     } catch (err) { console.warn('forest skipped', err); }
+    forestDone = true;
   }
 
   let views = [];
+  let fullyReady = false;
+  const candidates = [];
+
   async function init() {
     try {
       views = (await (await fetch(VIEWS_URL)).json()).viewpoints;
@@ -554,6 +828,7 @@ function start(renderer) {
       camera.fov = views[0].fov;
       camera.updateProjectionMatrix();
       hudRoom.textContent = views[0].label;
+      placeShadow(true);
     }
     hudMode.textContent = MODE_HELP.orbit;
 
@@ -570,20 +845,62 @@ function start(renderer) {
     }
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
-    loader.load(MODEL_URL, (gltf) => {
-      loadText.textContent = 'Preparing walkthrough...';
-      setTimeout(() => finish(gltf), 30);
-    }, (e) => {
-      const total = e.total || EXPECTED_BYTES;
-      const p = Math.min(1, e.loaded / total);
-      loadBar.style.width = (p * 100).toFixed(1) + '%';
-      loadSub.textContent = `${(e.loaded / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(0)} MB`;
-    }, (err) => {
+    try {
+      await loadModels(loader);
+    } catch (err) {
       loadText.textContent = 'Could not load the model.';
       loadSub.textContent = 'Check the connection, or try a desktop computer.';
       console.error(err);
+    }
+  }
+
+  function loadGLTF(loader, url) {
+    return new Promise((resolve, reject) => {
+      loader.load(url, resolve, (e) => {
+        const total = e.total || (cfg.expected / cfg.files.length);
+        const p = Math.min(1, e.loaded / total);
+        const index = cfg.files.indexOf(url);
+        const base = Math.max(0, index) / cfg.files.length;
+        loadBar.style.width = ((base + p / cfg.files.length) * 100).toFixed(1) + '%';
+        loadSub.textContent = `${(e.loaded / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(0)} MB`;
+      }, reject);
     });
-    buildForest();
+  }
+
+  async function loadModels(loader) {
+    let shown = false;
+    for (let i = 0; i < cfg.files.length; i++) {
+      if (i > 0) {
+        loadText.textContent = 'Loading rooms and furniture...';
+        const note = $('stream-note');
+        if (note && shown) note.classList.remove('hidden');
+      }
+      const gltf = await loadGLTF(loader, cfg.files[i]);
+      const part = gltf.scene;
+      prepareRoot(part);
+      scene.add(part);
+      modelRoots.push(part);
+      releaseParsed(gltf);
+      renderer.compile(scene, camera);
+      renderer.render(scene, camera);
+      releaseRootTextures(part);
+      if (!shown) {
+        shown = true;
+        $('loader').classList.add('done');
+        buildForest();
+      }
+    }
+    const note = $('stream-note');
+    if (note) note.classList.add('hidden');
+    const loaderEl = $('loader');
+    if (loaderEl) {
+      loaderEl.classList.add('done');
+      setTimeout(() => { if (loaderEl.parentNode) loaderEl.remove(); }, 500);
+    }
+    candidates.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
+    const cap = cfg.id === 'desktop' ? candidates.length : cfg.id === 'low' ? 36 : 64;
+    queueColliders(candidates.slice(0, cap));
+    fullyReady = true;
   }
 
   function releaseParsed(gltf) {
@@ -598,10 +915,43 @@ function start(renderer) {
     gltf.userData = null;
   }
 
+  function releaseRootTextures(root) {
+    const seen = new Set();
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m) continue;
+        for (const key of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'lightMap']) {
+          const tex = m[key];
+          if (!tex || !tex.isTexture || seen.has(tex.uuid)) continue;
+          seen.add(tex.uuid);
+          const image = tex.image || (tex.source && tex.source.data);
+          const w = image && image.width ? image.width : 0;
+          const h = image && image.height ? image.height : 0;
+          if (w && h) {
+            tex.userData.w = w;
+            tex.userData.h = h;
+          }
+          tex.userData.mip = tex.generateMipmaps !== false
+            && tex.minFilter !== THREE.LinearFilter
+            && tex.minFilter !== THREE.NearestFilter;
+          tex.userData.float = tex.type === THREE.HalfFloatType || tex.type === THREE.FloatType;
+          if (image && typeof image.close === 'function') {
+            try { image.close(); } catch (err) { /* already closed */ }
+          }
+          if (tex.source) tex.source.data = null;
+          tex.needsUpdate = false;
+        }
+      }
+    });
+  }
+
   function queueColliders(meshes) {
     let index = 0;
+    const batch = cfg.id === 'desktop' ? 4 : 1;
     const step = () => {
-      const end = Math.min(meshes.length, index + (mobile ? 1 : 4));
+      const end = Math.min(meshes.length, index + batch);
       for (; index < end; index++) {
         const mesh = meshes[index];
         if (!mesh.geometry || mesh.geometry.boundsTree) continue;
@@ -613,13 +963,12 @@ function start(renderer) {
     setTimeout(step, 40);
   }
 
-  function finish(gltf) {
-    const root = gltf.scene;
-    const maxAniso = mobile ? 1 : Math.min(4, renderer.capabilities.getMaxAnisotropy());
-    const candidates = [];
+  function prepareRoot(root) {
+    const maxAniso = Math.min(cfg.aniso, renderer.capabilities.getMaxAnisotropy());
     root.traverse((o) => {
       if (!o.isMesh) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const matName = mats.map((m) => (m && m.name) || '').join(' ');
       let glassy = false;
       for (const m of mats) {
         if (!m) continue;
@@ -631,35 +980,40 @@ function start(renderer) {
           m.depthWrite = false;
           m.roughness = Math.min(m.roughness, 0.08);
           m.metalness = 0;
-          m.envMapIntensity = mobile ? 0 : 1.5;
+          m.envMapIntensity = cfg.env ? 1.4 : 0;
         }
-        if (mobile && m.metalness > 0.2) {
+        if (cfg.metalClamp && m.metalness > 0.2) {
           m.metalness = Math.min(m.metalness, 0.35);
           m.roughness = Math.max(m.roughness, 0.45);
         }
         if (m.map) m.map.anisotropy = maxAniso;
-        if (mobile && m.map) {
-          m.map.generateMipmaps = true;
-        }
+      }
+      const hasColor = !!(o.geometry.attributes && o.geometry.attributes.color);
+      const colorLeak = mats.some((m) => m && m.vertexColors !== hasColor);
+      if (hasColor || colorLeak) {
+        const apply = (m) => {
+          if (!m) return m;
+          const clone = m.clone();
+          clone.vertexColors = hasColor;
+          return clone;
+        };
+        if (Array.isArray(o.material)) o.material = mats.map(apply);
+        else o.material = apply(mats[0]);
       }
       if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
       const big = o.geometry.boundingSphere;
-      o.castShadow = !mobile && !glassy && big.radius > 0.4;
-      o.receiveShadow = !mobile;
-      const skip = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|mat_|rug/i.test(o.name || '');
-      const minR = mobile ? 2.2 : 0.4;
-      if (!glassy && !skip && big.radius > minR) candidates.push(o);
+      const pos = o.geometry.attributes && o.geometry.attributes.position;
+      const triCount = !pos ? 0 : (o.geometry.index ? o.geometry.index.count / 3 : pos.count / 3);
+      const foliage = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|mat_|rug|gazania|periwinkle/i.test(`${o.name || ''} ${matName}`);
+      o.userData.canShadow = !glassy && !foliage && !o.isInstancedMesh && big.radius > 0.5 && triCount < 60000 && triCount > 8;
+      o.userData.canReceive = !glassy;
+      o.castShadow = cfg.shadows && o.userData.canShadow;
+      o.receiveShadow = cfg.shadows && o.userData.canReceive;
+      const minR = cfg.id === 'low' ? 2.2 : 0.4;
+      if (!glassy && !foliage && !o.isInstancedMesh && big.radius > minR && triCount < 50000 && triCount > 8) {
+        candidates.push(o);
+      }
     });
-    scene.add(root);
-    releaseParsed(gltf);
-    candidates.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
-    queueColliders(mobile ? candidates.slice(0, 36) : candidates);
-    renderer.compile(scene, camera);
-    $('loader').classList.add('done');
-    setTimeout(() => {
-      const loaderEl = $('loader');
-      if (loaderEl) loaderEl.remove();
-    }, 800);
   }
 
   function resize() {
@@ -672,8 +1026,10 @@ function start(renderer) {
   }
 
   const clock = new THREE.Clock();
-  let lostCount = 0;
   let loopOn = true;
+  let readyFrames = 0;
+  let watched = false;
+  const frameTimes = [];
   function frame() {
     if (!loopOn) return;
     const dt = Math.min(clock.getDelta(), 0.05);
@@ -681,43 +1037,64 @@ function start(renderer) {
     else if (mode === 'orbit') orbit.update();
     else stepFirstPerson(dt);
     if (flight) orbit.update();
+    placeShadow(false);
     renderer.render(scene, camera);
+    if (fullyReady) {
+      readyFrames += 1;
+      if (readyFrames === 45) sessionSet('dreamhome-boot', null);
+      if (!watched && !navigator.webdriver && selection.choice === 'auto' && !selection.forcedByUrl) {
+        frameTimes.push(dt);
+        if (frameTimes.length >= 90) {
+          watched = true;
+          const sample = frameTimes.slice().sort((a, b) => a - b);
+          const median = sample[(sample.length / 2) | 0];
+          if (median > 0.05 && cfg.id !== 'low') {
+            const next = stepDown(cfg.id);
+            sessionSet('dreamhome-ceiling', next);
+            sessionSet('dreamhome-boot', null);
+            sessionSet('dreamhome-fallback-note', `This device was below 20 frames per second on ${TIER_LABEL[cfg.id]}, so the next load uses ${TIER_LABEL[next]}.`);
+            reloadWithoutQuality();
+          }
+        }
+      }
+    }
   }
   renderer.setAnimationLoop(frame);
   canvas.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
-    lostCount += 1;
     loopOn = false;
     renderer.setAnimationLoop(null);
-    const again = lostCount >= 2;
-    showGfxFallback(again
-      ? 'Graphics reset more than once, so the walkthrough stopped. Try a desktop computer for the full model.'
-      : 'The graphics context was lost. Reload to try again, or open this page on a desktop computer.');
-  });
-  canvas.addEventListener('webglcontextrestored', () => {
-    if (lostCount >= 2) return;
-    loopOn = true;
-    renderer.setAnimationLoop(frame);
-    const box = $('gfx-fallback');
-    if (box) box.classList.add('hidden');
+    if (cfg.id === 'low') {
+      showGfxFallback('Graphics reset on the lightest tier. Try a desktop computer for the full walkthrough.');
+      return;
+    }
+    const next = stepDown(cfg.id);
+    sessionSet('dreamhome-ceiling', next);
+    sessionSet('dreamhome-boot', null);
+    sessionSet('dreamhome-fallback-note', `Graphics reset during ${TIER_LABEL[cfg.id]}, so this visit is using ${TIER_LABEL[next]}.`);
+    reloadWithoutQuality();
   });
   addEventListener('resize', resize);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
   resize();
 
+  const texturesSeen = new Set();
   function textureGPUBytes(texture) {
     if (!texture || !texture.isTexture || texturesSeen.has(texture.uuid)) return 0;
     texturesSeen.add(texture.uuid);
-    const image = texture.image;
-    const w = image && image.width ? image.width : 0;
-    const h = image && image.height ? image.height : 0;
+    const image = texture.image || (texture.source && texture.source.data);
+    const w = image && image.width ? image.width : (texture.userData.w || 0);
+    const h = image && image.height ? image.height : (texture.userData.h || 0);
     if (!w || !h) return 0;
-    const mip = texture.generateMipmaps !== false
-      && texture.minFilter !== THREE.LinearFilter
-      && texture.minFilter !== THREE.NearestFilter;
-    return Math.round(w * h * 4 * (mip ? 4 / 3 : 1));
+    const mip = texture.userData.mip != null
+      ? texture.userData.mip
+      : texture.generateMipmaps !== false
+        && texture.minFilter !== THREE.LinearFilter
+        && texture.minFilter !== THREE.NearestFilter;
+    const floatTex = texture.userData.float || texture.type === THREE.HalfFloatType || texture.type === THREE.FloatType;
+    const bpp = floatTex ? 8 : 4;
+    return Math.round(w * h * bpp * (mip ? 4 / 3 : 1));
   }
-  const texturesSeen = new Set();
   function stats() {
     let triangles = 0;
     let meshes = 0;
@@ -739,31 +1116,52 @@ function start(renderer) {
         }
       }
     });
+    textureBytes += textureGPUBytes(scene.environment);
+    if (renderer.shadowMap.enabled) textureBytes += cfg.shadowSize * cfg.shadowSize * 4;
+    renderer.render(scene, camera);
+    const info = renderer.info;
     const memory = performance && performance.memory ? {
       usedJSHeapSize: performance.memory.usedJSHeapSize,
       totalJSHeapSize: performance.memory.totalJSHeapSize,
     } : null;
+    const gl = renderer.getContext();
     return {
-      tier: mobile ? 'mobile' : 'desktop',
-      choice: tier.choice,
-      reasons: tier.reasons,
-      modelUrl: MODEL_URL,
+      tier: cfg.id,
+      choice: selection.choice,
+      reasons: selection.reasons,
+      modelUrl: cfg.files[0],
+      modelUrls: cfg.files.slice(),
+      fellBack: selection.fellBack,
+      fallbackNote: selection.note,
       triangles: Math.round(triangles),
       meshes,
       textureCount: texturesSeen.size,
       textureBytes,
       dpr: renderer.getPixelRatio(),
       shadows: renderer.shadowMap.enabled,
-      antialias: !mobile,
+      shadowSize: sun.shadow.mapSize.x,
+      antialias: cfg.antialias,
+      samples: gl.getParameter(gl.SAMPLES) || 0,
+      env: !!scene.environment,
+      forestRatio: cfg.forest,
+      forestTrees: forestCount,
+      info: {
+        calls: info.render.calls,
+        triangles: info.render.triangles,
+        geometries: info.memory.geometries,
+        textures: info.memory.textures,
+      },
       heap: memory,
     };
   }
 
   window.dreamHome = {
-    tier: mobile ? 'mobile' : 'desktop',
-    choice: tier.choice,
-    reasons: tier.reasons,
-    modelUrl: MODEL_URL,
+    tier: cfg.id,
+    choice: selection.choice,
+    reasons: selection.reasons,
+    modelUrl: cfg.files[0],
+    modelUrls: cfg.files.slice(),
+    fellBack: selection.fellBack,
     failed: false,
     views: () => views,
     jump(id) {
@@ -777,14 +1175,15 @@ function start(renderer) {
       camera.updateProjectionMatrix();
       orbit.update();
       hudRoom.textContent = v.label;
+      placeShadow(true);
       renderer.render(scene, camera);
       return true;
     },
     snapshot() {
       renderer.render(scene, camera);
-      return canvas.toDataURL('image/jpeg', 0.7);
+      return canvas.toDataURL('image/jpeg', 0.72);
     },
-    ready: () => !document.getElementById('loader'),
+    ready: () => fullyReady && forestDone,
     pause() {
       loopOn = false;
       renderer.setAnimationLoop(null);
