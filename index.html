@@ -2,16 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Dream Home | 3D Walkthrough</title>
 <meta name="description" content="Browser 3D walkthrough of my dream house">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8F%A1%3C/text%3E%3C/svg%3E">
+<script>
+  // Safari 16.0 through 16.3 has ES modules and not import maps.
+  // es-module-shims supplies the map on those versions and is skipped after 16.4.
+  if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('importmap')) {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.1/dist/es-module-shims.js"><\/script>');
+  }
+</script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js"
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.8.3/build/index.module.js",
+  "meshoptimizer": "https://cdn.jsdelivr.net/npm/meshoptimizer@0.22.0/meshopt_decoder.module.js"
 } }
 </script>
 </head>
@@ -27,7 +35,21 @@
   </div>
 </div>
 
-<button id="menu-btn" aria-label="Rooms">&#9776;</button>
+<div id="gfx-fallback" class="hidden" role="alert">
+  <div class="card">
+    <h1>Dream Home</h1>
+    <p id="gfx-msg">This browser could not keep the 3D view running.</p>
+    <p>Try a desktop computer for the full walkthrough.</p>
+    <div class="stills">
+      <img src="assets/fallback/front.jpg" alt="Front of the house">
+      <img src="assets/fallback/kitchen.jpg" alt="Kitchen">
+    </div>
+    <button id="gfx-reload" type="button">Reload</button>
+  </div>
+</div>
+
+<button id="scrim" type="button" aria-label="Close rooms"></button>
+<button id="menu-btn" type="button" aria-label="Rooms" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
 <aside id="sidebar">
   <header>
     <h2>Dream Home</h2>
@@ -37,15 +59,23 @@
   <section class="settings">
     <h3>Controls</h3>
     <div class="modes">
-      <button data-mode="orbit" class="mode active">Orbit</button>
-      <button data-mode="walk" class="mode">Walk</button>
-      <button data-mode="fly" class="mode">Fly</button>
+      <button type="button" data-mode="orbit" class="mode active">Orbit</button>
+      <button type="button" data-mode="walk" class="mode">Walk</button>
+      <button type="button" data-mode="fly" class="mode">Fly</button>
     </div>
     <label>Move speed <span id="speed-val">1.0x</span>
       <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"></label>
-    <label class="check"><input id="shadows" type="checkbox" checked> Sun shadows</label>
+    <label>Quality
+      <select id="quality">
+        <option value="auto">Auto</option>
+        <option value="desktop">Desktop</option>
+        <option value="mobile">Mobile</option>
+      </select>
+    </label>
+    <p id="tier-note" class="muted"></p>
+    <label class="check"><input id="shadows" type="checkbox"> Sun shadows</label>
     <label class="check"><input id="trees" type="checkbox" checked> Forest</label>
-    <label class="check"><input id="hq" type="checkbox"> High resolution</label>
+    <label class="check"><input id="hq" type="checkbox"> Sharper image</label>
   </section>
 </aside>
 
@@ -57,7 +87,7 @@
 <div id="lock-hint" class="hidden">Click to look around. WASD to move, Shift to sprint, Esc to release.</div>
 
 <div id="joy" class="hidden"><div id="joy-knob"></div></div>
-<div id="flybtns" class="hidden"><button id="up-btn">Up</button><button id="down-btn">Down</button></div>
+<div id="flybtns" class="hidden"><button id="up-btn" type="button">Up</button><button id="down-btn" type="button">Down</button></div>
 
 <script type="module" src="main.js"></script>
 </body>
