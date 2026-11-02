@@ -900,9 +900,7 @@ function start(renderer) {
       loaderEl.classList.add('done');
       setTimeout(() => { if (loaderEl.parentNode) loaderEl.remove(); }, 500);
     }
-    candidates.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
-    const cap = cfg.id === 'desktop' ? candidates.length : cfg.id === 'low' ? 36 : 64;
-    queueColliders(candidates.slice(0, cap));
+    queueColliders(pickColliders(candidates));
     fullyReady = true;
   }
 
@@ -962,6 +960,29 @@ function start(renderer) {
     });
   }
 
+  function collideRaycast(raycaster, intersects) {
+    // Walk rays start inside the house; wall materials are FrontSide, so
+    // temporarily allow double-sided hits without paying DoubleSide draw cost.
+    const mats = this.userData.collideMats;
+    const sides = this.userData.collideSides;
+    for (let i = 0; i < mats.length; i++) if (mats[i]) mats[i].side = THREE.DoubleSide;
+    acceleratedRaycast.call(this, raycaster, intersects);
+    for (let i = 0; i < mats.length; i++) if (mats[i]) mats[i].side = sides[i];
+  }
+
+  function pickColliders(list) {
+    const structural = [];
+    const other = [];
+    for (const mesh of list) {
+      if (mesh.userData.structural) structural.push(mesh);
+      else other.push(mesh);
+    }
+    other.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
+    // Always keep walls/floors. Fill the remaining budget with the largest props.
+    const otherCap = cfg.id === 'desktop' ? other.length : cfg.id === 'low' ? 36 : 64;
+    return structural.concat(other.slice(0, otherCap));
+  }
+
   function queueColliders(meshes) {
     let index = 0;
     const batch = cfg.id === 'desktop' ? 4 : 1;
@@ -971,6 +992,10 @@ function start(renderer) {
         const mesh = meshes[index];
         if (!mesh.geometry || mesh.geometry.boundsTree) continue;
         mesh.geometry.computeBoundsTree();
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mesh.userData.collideMats = mats;
+        mesh.userData.collideSides = mats.map((m) => (m ? m.side : THREE.FrontSide));
+        mesh.raycast = collideRaycast;
         colliders.push(mesh);
       }
       if (index < meshes.length) setTimeout(step, 16);
@@ -1019,13 +1044,19 @@ function start(renderer) {
       const big = o.geometry.boundingSphere;
       const pos = o.geometry.attributes && o.geometry.attributes.position;
       const triCount = !pos ? 0 : (o.geometry.index ? o.geometry.index.count / 3 : pos.count / 3);
-      const foliage = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|mat_|rug|gazania|periwinkle/i.test(`${o.name || ''} ${matName}`);
+      const label = `${o.name || ''} ${matName}`;
+      // mat_ matches bath mats (bath_mat_B), not glTF "material" names.
+      const foliage = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|bath_mat|door_mat|floor_mat|mat_|rug|gazania|periwinkle/i.test(label);
+      const structural = /accent_wall|cheek_wall|wall|floor|terrain|deck|stair|ceiling|roof|porch|foundation|slab|ramp|hearth/i.test(label);
+      o.userData.structural = structural;
       o.userData.canShadow = !glassy && !foliage && !o.isInstancedMesh && big.radius > 0.5 && triCount < 60000 && triCount > 8;
       o.userData.canReceive = !glassy;
       o.castShadow = cfg.shadows && o.userData.canShadow;
       o.receiveShadow = cfg.shadows && o.userData.canReceive;
-      const minR = cfg.id === 'low' ? 2.2 : 0.4;
-      if (!glassy && !foliage && !o.isInstancedMesh && big.radius > minR && triCount < 50000 && triCount > 8) {
+      // House shell walls (accent_wall) exceed the old 50k tri cutoff on High/Desktop.
+      const maxTris = structural ? 2e6 : 50000;
+      const minR = structural ? 0.05 : (cfg.id === 'low' ? 2.2 : 0.4);
+      if (!glassy && !foliage && !o.isInstancedMesh && big.radius > minR && triCount < maxTris && triCount > 8) {
         candidates.push(o);
       }
     });
@@ -1152,6 +1183,7 @@ function start(renderer) {
       fallbackNote: selection.note,
       triangles: Math.round(triangles),
       meshes,
+      colliders: colliders.length,
       textureCount: texturesSeen.size,
       textureBytes,
       dpr: renderer.getPixelRatio(),
