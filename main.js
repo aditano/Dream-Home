@@ -1032,7 +1032,9 @@ function start(renderer) {
   const frameTimes = [];
   function frame() {
     if (!loopOn) return;
-    const dt = Math.min(clock.getDelta(), 0.05);
+    // Keep simulation steps bounded, but sample the raw delta so FPS step-down can fire.
+    const rawDt = clock.getDelta();
+    const dt = Math.min(rawDt, 0.05);
     if (flight) stepFlight(dt);
     else if (mode === 'orbit') orbit.update();
     else stepFirstPerson(dt);
@@ -1043,7 +1045,7 @@ function start(renderer) {
       readyFrames += 1;
       if (readyFrames === 45) sessionSet('dreamhome-boot', null);
       if (!watched && !navigator.webdriver && selection.choice === 'auto' && !selection.forcedByUrl) {
-        frameTimes.push(dt);
+        frameTimes.push(rawDt);
         if (frameTimes.length >= 90) {
           watched = true;
           const sample = frameTimes.slice().sort((a, b) => a - b);
