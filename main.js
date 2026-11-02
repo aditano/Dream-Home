@@ -998,8 +998,16 @@ function start(renderer) {
   }
 
   function armCollider(mesh) {
-    if (!mesh.geometry || mesh.geometry.boundsTree) return false;
-    mesh.geometry.computeBoundsTree();
+    if (!mesh.geometry) return false;
+    // glTF nodes often share BufferGeometry; still register every Mesh for raycasts.
+    if (!mesh.geometry.boundsTree) {
+      try {
+        mesh.geometry.computeBoundsTree();
+      } catch (err) {
+        console.warn('collider BVH skipped', mesh.name || mesh.uuid, err);
+        return false;
+      }
+    }
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     mesh.userData.collideMats = mats;
     mesh.userData.collideSides = mats.map((m) => (m ? m.side : THREE.FrontSide));
@@ -1017,10 +1025,9 @@ function start(renderer) {
       else armCollider(mesh);
     }
     let index = 0;
-    const batch = cfg.id === 'desktop' ? 1 : 1;
     const step = () => {
-      const end = Math.min(deferred.length, index + batch);
-      for (; index < end; index++) armCollider(deferred[index]);
+      if (index >= deferred.length) return;
+      armCollider(deferred[index++]);
       if (index < deferred.length) setTimeout(step, 16);
     };
     if (deferred.length) setTimeout(step, 40);
