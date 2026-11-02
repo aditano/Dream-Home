@@ -24,7 +24,7 @@
 </script>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c" role="img" aria-label="3D walkthrough of the dream house"></canvas>
 
 <div id="loader">
   <div class="card">
@@ -58,10 +58,10 @@
   <div id="rooms"></div>
   <section class="settings">
     <h3>Controls</h3>
-    <div class="modes">
-      <button type="button" data-mode="orbit" class="mode active">Orbit</button>
-      <button type="button" data-mode="walk" class="mode">Walk</button>
-      <button type="button" data-mode="fly" class="mode">Fly</button>
+    <div class="modes" role="group" aria-label="Camera mode">
+      <button type="button" data-mode="orbit" class="mode active" aria-pressed="true">Orbit</button>
+      <button type="button" data-mode="walk" class="mode" aria-pressed="false">Walk</button>
+      <button type="button" data-mode="fly" class="mode" aria-pressed="false">Fly</button>
     </div>
     <label>Move speed <span id="speed-val">1.0x</span>
       <input id="speed" type="range" min="0.25" max="4" step="0.25" value="1"></label>
@@ -84,7 +84,7 @@
 
 <div id="stream-note" class="hidden">Adding rooms and furniture...</div>
 
-<div id="hud">
+<div id="hud" aria-live="polite">
   <span id="hud-room">Front of house</span>
   <span id="hud-mode" class="muted">Orbit: drag to rotate, scroll to zoom, right drag to pan</span>
 </div>

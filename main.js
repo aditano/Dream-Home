@@ -467,7 +467,11 @@ function start(renderer) {
 
   function setMode(m) {
     mode = m;
-    document.querySelectorAll('.mode').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+    document.querySelectorAll('.mode').forEach((b) => {
+      const on = b.dataset.mode === m;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     hudMode.textContent = MODE_HELP[m];
     const fp = m !== 'orbit';
     orbit.enabled = !fp;
