@@ -974,6 +974,14 @@ function start(renderer) {
     for (let i = 0; i < mats.length; i++) if (mats[i]) mats[i].side = sides[i];
   }
 
+  function meshTriCount(mesh) {
+    const geo = mesh.geometry;
+    if (!geo) return 0;
+    const pos = geo.attributes && geo.attributes.position;
+    if (!pos) return 0;
+    return geo.index ? geo.index.count / 3 : pos.count / 3;
+  }
+
   function pickColliders(list) {
     const structural = [];
     const other = [];
@@ -981,30 +989,41 @@ function start(renderer) {
       if (mesh.userData.structural) structural.push(mesh);
       else other.push(mesh);
     }
+    // Small floors/walls first so walk works while huge shell BVHs build.
+    structural.sort((a, b) => meshTriCount(a) - meshTriCount(b));
     other.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
     // Always keep walls/floors. Fill the remaining budget with the largest props.
     const otherCap = cfg.id === 'desktop' ? other.length : cfg.id === 'low' ? 36 : 64;
     return structural.concat(other.slice(0, otherCap));
   }
 
+  function armCollider(mesh) {
+    if (!mesh.geometry || mesh.geometry.boundsTree) return false;
+    mesh.geometry.computeBoundsTree();
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mesh.userData.collideMats = mats;
+    mesh.userData.collideSides = mats.map((m) => (m ? m.side : THREE.FrontSide));
+    mesh.raycast = collideRaycast;
+    colliders.push(mesh);
+    return true;
+  }
+
   function queueColliders(meshes) {
+    // Sync-build modest meshes so Low/High are solid as soon as walk is offered.
+    // Defer only heavy shell pieces (accent_wall on High is 500k+ tris).
+    const deferred = [];
+    for (const mesh of meshes) {
+      if (meshTriCount(mesh) > 80000) deferred.push(mesh);
+      else armCollider(mesh);
+    }
     let index = 0;
-    const batch = cfg.id === 'desktop' ? 4 : 1;
+    const batch = cfg.id === 'desktop' ? 1 : 1;
     const step = () => {
-      const end = Math.min(meshes.length, index + batch);
-      for (; index < end; index++) {
-        const mesh = meshes[index];
-        if (!mesh.geometry || mesh.geometry.boundsTree) continue;
-        mesh.geometry.computeBoundsTree();
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-        mesh.userData.collideMats = mats;
-        mesh.userData.collideSides = mats.map((m) => (m ? m.side : THREE.FrontSide));
-        mesh.raycast = collideRaycast;
-        colliders.push(mesh);
-      }
-      if (index < meshes.length) setTimeout(step, 16);
+      const end = Math.min(deferred.length, index + batch);
+      for (; index < end; index++) armCollider(deferred[index]);
+      if (index < deferred.length) setTimeout(step, 16);
     };
-    setTimeout(step, 40);
+    if (deferred.length) setTimeout(step, 40);
   }
 
   function prepareRoot(root) {
