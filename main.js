@@ -882,6 +882,9 @@ function start(renderer) {
       modelRoots.push(part);
       releaseParsed(gltf);
       renderer.compile(scene, camera);
+      // Interior meshes are often frustum-culled on first paint; force GPU
+      // upload before dropping CPU image bytes or those textures never show.
+      uploadRootTextures(part);
       renderer.render(scene, camera);
       releaseRootTextures(part);
       if (!shown) {
@@ -915,7 +918,7 @@ function start(renderer) {
     gltf.userData = null;
   }
 
-  function releaseRootTextures(root) {
+  function eachRootTexture(root, fn) {
     const seen = new Set();
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -926,24 +929,36 @@ function start(renderer) {
           const tex = m[key];
           if (!tex || !tex.isTexture || seen.has(tex.uuid)) continue;
           seen.add(tex.uuid);
-          const image = tex.image || (tex.source && tex.source.data);
-          const w = image && image.width ? image.width : 0;
-          const h = image && image.height ? image.height : 0;
-          if (w && h) {
-            tex.userData.w = w;
-            tex.userData.h = h;
-          }
-          tex.userData.mip = tex.generateMipmaps !== false
-            && tex.minFilter !== THREE.LinearFilter
-            && tex.minFilter !== THREE.NearestFilter;
-          tex.userData.float = tex.type === THREE.HalfFloatType || tex.type === THREE.FloatType;
-          if (image && typeof image.close === 'function') {
-            try { image.close(); } catch (err) { /* already closed */ }
-          }
-          if (tex.source) tex.source.data = null;
-          tex.needsUpdate = false;
+          fn(tex);
         }
       }
+    });
+  }
+
+  function uploadRootTextures(root) {
+    eachRootTexture(root, (tex) => {
+      try { renderer.initTexture(tex); } catch (err) { /* context lost mid-load */ }
+    });
+  }
+
+  function releaseRootTextures(root) {
+    eachRootTexture(root, (tex) => {
+      const image = tex.image || (tex.source && tex.source.data);
+      const w = image && image.width ? image.width : 0;
+      const h = image && image.height ? image.height : 0;
+      if (w && h) {
+        tex.userData.w = w;
+        tex.userData.h = h;
+      }
+      tex.userData.mip = tex.generateMipmaps !== false
+        && tex.minFilter !== THREE.LinearFilter
+        && tex.minFilter !== THREE.NearestFilter;
+      tex.userData.float = tex.type === THREE.HalfFloatType || tex.type === THREE.FloatType;
+      if (image && typeof image.close === 'function') {
+        try { image.close(); } catch (err) { /* already closed */ }
+      }
+      if (tex.source) tex.source.data = null;
+      tex.needsUpdate = false;
     });
   }
 
