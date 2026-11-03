@@ -467,7 +467,11 @@ function start(renderer) {
 
   function setMode(m) {
     mode = m;
-    document.querySelectorAll('.mode').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+    document.querySelectorAll('.mode').forEach((b) => {
+      const on = b.dataset.mode === m;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
     hudMode.textContent = MODE_HELP[m];
     const fp = m !== 'orbit';
     orbit.enabled = !fp;
@@ -882,6 +886,9 @@ function start(renderer) {
       modelRoots.push(part);
       releaseParsed(gltf);
       renderer.compile(scene, camera);
+      // Interior meshes are often frustum-culled on first paint; force GPU
+      // upload before dropping CPU image bytes or those textures never show.
+      uploadRootTextures(part);
       renderer.render(scene, camera);
       releaseRootTextures(part);
       if (!shown) {
@@ -897,9 +904,7 @@ function start(renderer) {
       loaderEl.classList.add('done');
       setTimeout(() => { if (loaderEl.parentNode) loaderEl.remove(); }, 500);
     }
-    candidates.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
-    const cap = cfg.id === 'desktop' ? candidates.length : cfg.id === 'low' ? 36 : 64;
-    queueColliders(candidates.slice(0, cap));
+    queueColliders(pickColliders(candidates));
     fullyReady = true;
   }
 
@@ -915,7 +920,7 @@ function start(renderer) {
     gltf.userData = null;
   }
 
-  function releaseRootTextures(root) {
+  function eachRootTexture(root, fn) {
     const seen = new Set();
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -926,41 +931,106 @@ function start(renderer) {
           const tex = m[key];
           if (!tex || !tex.isTexture || seen.has(tex.uuid)) continue;
           seen.add(tex.uuid);
-          const image = tex.image || (tex.source && tex.source.data);
-          const w = image && image.width ? image.width : 0;
-          const h = image && image.height ? image.height : 0;
-          if (w && h) {
-            tex.userData.w = w;
-            tex.userData.h = h;
-          }
-          tex.userData.mip = tex.generateMipmaps !== false
-            && tex.minFilter !== THREE.LinearFilter
-            && tex.minFilter !== THREE.NearestFilter;
-          tex.userData.float = tex.type === THREE.HalfFloatType || tex.type === THREE.FloatType;
-          if (image && typeof image.close === 'function') {
-            try { image.close(); } catch (err) { /* already closed */ }
-          }
-          if (tex.source) tex.source.data = null;
-          tex.needsUpdate = false;
+          fn(tex);
         }
       }
     });
   }
 
-  function queueColliders(meshes) {
-    let index = 0;
-    const batch = cfg.id === 'desktop' ? 4 : 1;
-    const step = () => {
-      const end = Math.min(meshes.length, index + batch);
-      for (; index < end; index++) {
-        const mesh = meshes[index];
-        if (!mesh.geometry || mesh.geometry.boundsTree) continue;
-        mesh.geometry.computeBoundsTree();
-        colliders.push(mesh);
+  function uploadRootTextures(root) {
+    eachRootTexture(root, (tex) => {
+      try { renderer.initTexture(tex); } catch (err) { /* context lost mid-load */ }
+    });
+  }
+
+  function releaseRootTextures(root) {
+    eachRootTexture(root, (tex) => {
+      const image = tex.image || (tex.source && tex.source.data);
+      const w = image && image.width ? image.width : 0;
+      const h = image && image.height ? image.height : 0;
+      if (w && h) {
+        tex.userData.w = w;
+        tex.userData.h = h;
       }
-      if (index < meshes.length) setTimeout(step, 16);
+      tex.userData.mip = tex.generateMipmaps !== false
+        && tex.minFilter !== THREE.LinearFilter
+        && tex.minFilter !== THREE.NearestFilter;
+      tex.userData.float = tex.type === THREE.HalfFloatType || tex.type === THREE.FloatType;
+      if (image && typeof image.close === 'function') {
+        try { image.close(); } catch (err) { /* already closed */ }
+      }
+      if (tex.source) tex.source.data = null;
+      tex.needsUpdate = false;
+    });
+  }
+
+  function collideRaycast(raycaster, intersects) {
+    // Walk rays start inside the house; wall materials are FrontSide, so
+    // temporarily allow double-sided hits without paying DoubleSide draw cost.
+    const mats = this.userData.collideMats;
+    const sides = this.userData.collideSides;
+    for (let i = 0; i < mats.length; i++) if (mats[i]) mats[i].side = THREE.DoubleSide;
+    acceleratedRaycast.call(this, raycaster, intersects);
+    for (let i = 0; i < mats.length; i++) if (mats[i]) mats[i].side = sides[i];
+  }
+
+  function meshTriCount(mesh) {
+    const geo = mesh.geometry;
+    if (!geo) return 0;
+    const pos = geo.attributes && geo.attributes.position;
+    if (!pos) return 0;
+    return geo.index ? geo.index.count / 3 : pos.count / 3;
+  }
+
+  function pickColliders(list) {
+    const structural = [];
+    const other = [];
+    for (const mesh of list) {
+      if (mesh.userData.structural) structural.push(mesh);
+      else other.push(mesh);
+    }
+    // Small floors/walls first so walk works while huge shell BVHs build.
+    structural.sort((a, b) => meshTriCount(a) - meshTriCount(b));
+    other.sort((a, b) => b.geometry.boundingSphere.radius - a.geometry.boundingSphere.radius);
+    // Always keep walls/floors. Fill the remaining budget with the largest props.
+    const otherCap = cfg.id === 'desktop' ? other.length : cfg.id === 'low' ? 36 : 64;
+    return structural.concat(other.slice(0, otherCap));
+  }
+
+  function armCollider(mesh) {
+    if (!mesh.geometry) return false;
+    // glTF nodes often share BufferGeometry; still register every Mesh for raycasts.
+    if (!mesh.geometry.boundsTree) {
+      try {
+        mesh.geometry.computeBoundsTree();
+      } catch (err) {
+        console.warn('collider BVH skipped', mesh.name || mesh.uuid, err);
+        return false;
+      }
+    }
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mesh.userData.collideMats = mats;
+    mesh.userData.collideSides = mats.map((m) => (m ? m.side : THREE.FrontSide));
+    mesh.raycast = collideRaycast;
+    colliders.push(mesh);
+    return true;
+  }
+
+  function queueColliders(meshes) {
+    // Sync-build modest meshes so Low/High are solid as soon as walk is offered.
+    // Defer only heavy shell pieces (accent_wall on High is 500k+ tris).
+    const deferred = [];
+    for (const mesh of meshes) {
+      if (meshTriCount(mesh) > 80000) deferred.push(mesh);
+      else armCollider(mesh);
+    }
+    let index = 0;
+    const step = () => {
+      if (index >= deferred.length) return;
+      armCollider(deferred[index++]);
+      if (index < deferred.length) setTimeout(step, 16);
     };
-    setTimeout(step, 40);
+    if (deferred.length) setTimeout(step, 40);
   }
 
   function prepareRoot(root) {
@@ -1004,13 +1074,19 @@ function start(renderer) {
       const big = o.geometry.boundingSphere;
       const pos = o.geometry.attributes && o.geometry.attributes.position;
       const triCount = !pos ? 0 : (o.geometry.index ? o.geometry.index.count / 3 : pos.count / 3);
-      const foliage = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|mat_|rug|gazania|periwinkle/i.test(`${o.name || ''} ${matName}`);
+      const label = `${o.name || ''} ${matName}`;
+      // mat_ matches bath mats (bath_mat_B), not glTF "material" names.
+      const foliage = /curtain|towel|plant|leaves|flower|fern|shrub|tree|pillow|bath_mat|door_mat|floor_mat|mat_|rug|gazania|periwinkle/i.test(label);
+      const structural = /accent_wall|cheek_wall|wall|floor|terrain|deck|stair|ceiling|roof|porch|foundation|slab|ramp|hearth/i.test(label);
+      o.userData.structural = structural;
       o.userData.canShadow = !glassy && !foliage && !o.isInstancedMesh && big.radius > 0.5 && triCount < 60000 && triCount > 8;
       o.userData.canReceive = !glassy;
       o.castShadow = cfg.shadows && o.userData.canShadow;
       o.receiveShadow = cfg.shadows && o.userData.canReceive;
-      const minR = cfg.id === 'low' ? 2.2 : 0.4;
-      if (!glassy && !foliage && !o.isInstancedMesh && big.radius > minR && triCount < 50000 && triCount > 8) {
+      // House shell walls (accent_wall) exceed the old 50k tri cutoff on High/Desktop.
+      const maxTris = structural ? 2e6 : 50000;
+      const minR = structural ? 0.05 : (cfg.id === 'low' ? 2.2 : 0.4);
+      if (!glassy && !foliage && !o.isInstancedMesh && big.radius > minR && triCount < maxTris && triCount > 8) {
         candidates.push(o);
       }
     });
@@ -1032,7 +1108,9 @@ function start(renderer) {
   const frameTimes = [];
   function frame() {
     if (!loopOn) return;
-    const dt = Math.min(clock.getDelta(), 0.05);
+    // Keep simulation steps bounded, but sample the raw delta so FPS step-down can fire.
+    const rawDt = clock.getDelta();
+    const dt = Math.min(rawDt, 0.05);
     if (flight) stepFlight(dt);
     else if (mode === 'orbit') orbit.update();
     else stepFirstPerson(dt);
@@ -1043,7 +1121,7 @@ function start(renderer) {
       readyFrames += 1;
       if (readyFrames === 45) sessionSet('dreamhome-boot', null);
       if (!watched && !navigator.webdriver && selection.choice === 'auto' && !selection.forcedByUrl) {
-        frameTimes.push(dt);
+        frameTimes.push(rawDt);
         if (frameTimes.length >= 90) {
           watched = true;
           const sample = frameTimes.slice().sort((a, b) => a - b);
@@ -1135,6 +1213,7 @@ function start(renderer) {
       fallbackNote: selection.note,
       triangles: Math.round(triangles),
       meshes,
+      colliders: colliders.length,
       textureCount: texturesSeen.size,
       textureBytes,
       dpr: renderer.getPixelRatio(),

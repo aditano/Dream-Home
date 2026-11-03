@@ -66,3 +66,6 @@ body.menu-open #scrim { display: block; }
   .room { padding: 12px 10px; }
   .mode { padding: 12px 0; }
 }
+@media (prefers-reduced-motion: reduce) {
+  #loader, #sidebar, #load-bar { transition: none; }
+}
